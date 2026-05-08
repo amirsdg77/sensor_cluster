@@ -1,0 +1,64 @@
+# sensorcluster — default training configuration.
+# Override any value via CLI (--data.path ...) or env (SENSORCLUSTER_DATA__PATH=...).
+
+random_seed: 42
+
+data:
+  path: data/raw/data_sensors.csv
+  sensor_columns_prefix: "Sensor "
+  n_sensors: 20
+  label_column: Label
+  # Tolerance band around the documented [-1, 1] range so we don't reject
+  # mildly out-of-distribution upstream values; pandera schema enforces this.
+  sensor_min: -1.05
+  sensor_max: 1.05
+  valid_labels: [1.0, 2.0, 3.0]
+
+preprocess:
+  imputer_strategy: median   # median > mean for sensor data with sporadic spikes
+
+pca:
+  variance_target: 0.95      # auto-pick n_components covering this variance
+
+hdbscan:
+  # NOTE: default tuned on the included sample dataset. The sample has very weak
+  # density structure (mostly uniform noise across 20 channels), so we use
+  # aggressive settings that surface *some* clusters; on real production data
+  # you almost certainly want larger values (mcs=15+, ms=5+). Sweep these on a
+  # holdout in `notebooks/03_clustering_experiments.ipynb`.
+  min_cluster_size: 8
+  min_samples: 3
+  metric: euclidean
+  cluster_selection_method: eom
+  prediction_data: true      # required for approximate_predict at inference time
+
+novelty:
+  # GLOSH score above this threshold flips is_novel=true.
+  # Tuned on training reference; APIs always return raw score so it can be re-thresholded downstream.
+  glosh_threshold: 0.7
+
+label_propagation:
+  # Per-cluster purity below this triggers a warning in evaluation_report.md.
+  purity_warning: 0.6
+  # When mapping a cluster to a label, weight votes by 1/class_count
+  # so the 10/10/20 imbalance doesn't bias toward class 3.
+  weighted: true
+
+evaluation:
+  cv_folds: 5
+  bootstrap_n_runs: 30
+  bootstrap_sample_frac: 0.8
+
+inference:
+  top_neighbors: 3           # /predict returns the 3 nearest labeled historical points
+
+artifacts_dir: artifacts
+
+mlflow:
+  enabled: true
+  tracking_uri: file:./mlruns
+  experiment_name: sensorcluster
+
+logging:
+  level: INFO
+  json_logs: false           # console-friendly in dev; set true (or env) in prod

@@ -1,0 +1,98 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+pip-wheel-metadata/
+
+# Virtual envs
+.venv/
+venv/
+env/
+.python-version-local
+
+# uv
+.uv-cache/
+# Lockfile is intentionally not committed for this PoC (see README "Development").
+# Drop this line if you decide to start pinning dependencies.
+uv.lock
+
+# Jupyter
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# Testing & coverage
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.benchmarks/
+
+# Profiler output
+*.prof
+*.lprof
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+*.bak
+*.tmp
+
+# Claude Code (local tool-permission state, per-machine)
+.claude/
+
+# Direnv
+.envrc
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project artifacts (model binaries should be re-trained, not committed)
+artifacts/*
+!artifacts/.gitkeep
+
+# Intermediate / processed data — keep raw checked-in only
+data/interim/*
+data/processed/*
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# MLflow runs
+mlruns/
+mlartifacts/
+
+# Logs
+*.log
+logs/
+
+# Local docker volumes
+.docker-data/
+
+# Local config overrides (developer-private hyperparameter tweaks)
+configs/*.local.yaml
+configs/local.yaml
+
+# Secrets
+.env
+.env.*
+!.env.example

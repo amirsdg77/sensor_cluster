@@ -1,0 +1,66 @@
+services:
+  training:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.train
+    image: sensorcluster-train:latest
+    profiles: ["train"]            # `docker compose --profile train up training`
+    environment:
+      SENSORCLUSTER_MLFLOW__TRACKING_URI: file:/app/mlruns
+    volumes:
+      - ./data:/app/data:ro
+      - ./artifacts:/app/artifacts
+      - ./mlruns:/app/mlruns
+      - ./configs:/app/configs:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.serve
+    image: sensorcluster-serve:latest
+    ports:
+      - "8000:8000"
+    environment:
+      SENSORCLUSTER_ARTIFACTS_DIR: /app/artifacts
+      SENSORCLUSTER_LOG_JSON: "true"
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.16.0
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri file:///mlruns
+
+  jupyter:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.train
+    image: sensorcluster-train:latest
+    profiles: ["dev"]              # `docker compose --profile dev up jupyter`
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/app
+    entrypoint: []
+    command: >
+      jupyter lab
+        --ip=0.0.0.0
+        --port=8888
+        --no-browser
+        --allow-root
+        --ServerApp.token=''
+        --ServerApp.password=''
