@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.6
+#
+# Serving image — slim, only inference deps. Loads pre-trained artifacts at startup.
+
+FROM python:3.11-slim AS builder
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    PYTHONDONTWRITEBYTECODE=1
+
+# hdbscan needs a C compiler + Python headers to build its C extensions.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential gcc g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN python -m pip install --upgrade pip wheel \
+ && python -m pip install ".[serve]"
+
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    SENSORCLUSTER_ARTIFACTS_DIR=/app/artifacts \
+    SENSORCLUSTER_LOG_JSON=true
+
+# curl for the healthcheck only.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system --gid 1000 app \
+ && useradd  --system --uid 1000 --gid app --create-home --home-dir /home/app app
+
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin/sensorcluster /usr/local/bin/sensorcluster
+
+WORKDIR /app
+COPY configs ./configs
+# Optional: bake in a reference model. Mounted volume in compose overrides.
+COPY artifacts ./artifacts
+RUN chown -R app:app /app
+
+USER app
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
+ENTRYPOINT ["uvicorn", "sensorcluster.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
