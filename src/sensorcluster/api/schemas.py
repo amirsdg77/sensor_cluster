@@ -8,12 +8,42 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class HealthResponse(BaseModel):
+    """Combined health payload returned by /health (legacy alias of /readyz)."""
+
     model_config = ConfigDict(extra="forbid")
     status: str
     model_version: str
     trained_at: str
     n_clusters: int
     n_unknown_clusters: int
+
+
+class LivenessResponse(BaseModel):
+    """Liveness payload — process is responsive. Almost-never fails."""
+
+    model_config = ConfigDict(extra="forbid")
+    status: str = "ok"
+
+
+class ReadinessResponse(BaseModel):
+    """Readiness payload — pipeline loaded and able to serve predictions."""
+
+    model_config = ConfigDict(extra="forbid")
+    status: str
+    model_version: str
+    trained_at: str
+    n_clusters: int
+    n_unknown_clusters: int
+
+
+class VersionResponse(BaseModel):
+    """Build / model version metadata for ops + audit trails."""
+
+    model_config = ConfigDict(extra="forbid")
+    model_version: str
+    trained_at: str
+    schema_version: str
+    api_version: str
 
 
 # Loose upper bound on vector length; the route handler runs the exact

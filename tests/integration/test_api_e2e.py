@@ -76,3 +76,51 @@ def test_clusters_endpoint(trained_app: TestClient) -> None:
 def test_predict_rejects_wrong_dimensionality(trained_app: TestClient) -> None:
     r = trained_app.post("/predict", json={"sensors": [0.0] * 5})  # too few
     assert r.status_code == 422
+
+
+@pytest.mark.integration()
+def test_healthz_does_not_depend_on_pipeline(trained_app: TestClient) -> None:
+    """Liveness must succeed even if the pipeline isn't loaded."""
+    r = trained_app.get("/healthz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {"status": "ok"}
+
+
+@pytest.mark.integration()
+def test_readyz_returns_model_identity(trained_app: TestClient) -> None:
+    """Readiness exposes model identity for ops dashboards."""
+    r = trained_app.get("/readyz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ready"
+    assert body["model_version"]
+    assert body["trained_at"]
+    assert body["n_clusters"] >= 2
+
+
+@pytest.mark.integration()
+def test_version_endpoint_carries_schema_and_api_versions(trained_app: TestClient) -> None:
+    r = trained_app.get("/version")
+    assert r.status_code == 200
+    body = r.json()
+    # Schema and API versions follow semver and are non-empty.
+    assert all(part.isdigit() for part in body["schema_version"].split("."))
+    assert all(part.isdigit() for part in body["api_version"].split("."))
+
+
+@pytest.mark.integration()
+def test_predict_batch_stream_emits_one_ndjson_line_per_row(trained_app: TestClient) -> None:
+    rows = [[0.1] * 20, [-0.2] * 20, [0.5] * 20]
+    with trained_app.stream("POST", "/predict_batch/stream", json={"rows": rows}) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/x-ndjson")
+        body = b"".join(resp.iter_bytes()).decode("utf-8")
+    lines = [ln for ln in body.split("\n") if ln.strip()]
+    assert len(lines) == len(rows)
+    import json as _json
+
+    for line in lines:
+        payload = _json.loads(line)
+        assert "predicted_label" in payload
+        assert 0.0 <= payload["confidence"] <= 1.0
