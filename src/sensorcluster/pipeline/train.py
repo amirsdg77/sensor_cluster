@@ -139,6 +139,7 @@ def _factory_for_cv(cfg: Settings) -> PipelineFactoryFn:
         Xs = pre.transform(X_train)
         pca = PCAReducer(
             variance_target=cfg.pca.variance_target,
+            n_components=cfg.pca.n_components,
             random_state=cfg.random_seed,
         ).fit(Xs)
         Xp = pca.transform(Xs)
@@ -227,10 +228,16 @@ def train(cfg: Settings) -> TrainResult:
 
     pca = PCAReducer(
         variance_target=cfg.pca.variance_target,
+        n_components=cfg.pca.n_components,
         random_state=cfg.random_seed,
     ).fit(X_scaled)
     X_proj = pca.transform(X_scaled)
-    log.info("pca_fitted", n_components=pca.n_components_, variance_target=cfg.pca.variance_target)
+    log.info(
+        "pca_fitted",
+        n_components=pca.n_components_,
+        variance_target=cfg.pca.variance_target,
+        n_components_config=cfg.pca.n_components,
+    )
 
     model = HDBSCANModel(
         min_cluster_size=cfg.hdbscan.min_cluster_size,

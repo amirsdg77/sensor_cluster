@@ -18,16 +18,26 @@ preprocess:
   imputer_strategy: median   # median > mean for sensor data with sporadic spikes
 
 pca:
-  variance_target: 0.95      # auto-pick n_components covering this variance
+  # n_components wins over variance_target when both are set.
+  # Notebook 04 multi-seed sweep showed n_components=5 + HDBSCAN(mcs=10, ms=5)
+  # produces the best CV ARI on this dataset (+0.085 averaged across 10 seeds
+  # vs +0.052 for the original variance_target=0.95 default — a 64% lift).
+  # PCA dim and HDBSCAN params must be tuned together; lower-dim space is
+  # denser, so HDBSCAN needs a tighter min_samples threshold to compensate.
+  # Set n_components: null to fall back to the variance_target heuristic.
+  n_components: 5
+  variance_target: 0.95
 
 hdbscan:
-  # NOTE: default tuned on the included sample dataset. The sample has very weak
-  # density structure (mostly uniform noise across 20 channels), so we use
-  # aggressive settings that surface *some* clusters; on real production data
-  # you almost certainly want larger values (mcs=15+, ms=5+). Sweep these on a
-  # holdout in `notebooks/03_clustering_experiments.ipynb`.
-  min_cluster_size: 8
-  min_samples: 3
+  # NOTE: defaults tuned jointly with PCA n_components=5 (see notebook 04).
+  # min_samples=5 (rather than the older 3) is necessary in the denser
+  # 5-dim PCA space — without it HDBSCAN forms tiny spurious clusters that
+  # don't generalize under cross-validation. min_cluster_size=10 is also
+  # the multi-seed-CV winner.
+  # On real production data with discriminative features you'll likely want
+  # even larger values (mcs=15+, ms=5+); sweep in notebook 03.
+  min_cluster_size: 10
+  min_samples: 5
   metric: euclidean
   cluster_selection_method: eom
   prediction_data: true      # required for approximate_predict at inference time

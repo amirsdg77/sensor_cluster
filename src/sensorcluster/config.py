@@ -41,15 +41,21 @@ class PreprocessConfig(StrictBaseModel):
 
 
 class PCAConfig(StrictBaseModel):
+    # If n_components is set (>=1), it wins; otherwise variance_target picks
+    # the smallest k whose cumulative explained variance reaches the target.
+    # Notebook 04 (feature engineering sweep) showed n_components=5 produces
+    # better HDBSCAN ARI on the bundled near-uniform data than the original
+    # variance_target=0.95 default, due to the curse of dimensionality.
     variance_target: float = 0.95
+    n_components: int | None = 5
 
 
 class HDBSCANConfig(StrictBaseModel):
     # Defaults track configs/base.yaml so constructing Settings() without a
     # YAML file produces the same operating point reviewers see when they
     # run `sensorcluster train --config configs/base.yaml`.
-    min_cluster_size: int = 8
-    min_samples: int = 3
+    min_cluster_size: int = 10
+    min_samples: int = 5
     metric: str = "euclidean"
     cluster_selection_method: str = "eom"
     prediction_data: bool = True
