@@ -7,6 +7,7 @@ artifact directory behind.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -199,19 +200,48 @@ class SensorClusterPipeline:
                         else:
                             shutil.copy2(existing, staging / existing.name)
 
-            # On Windows, os.replace will not replace a non-empty directory
-            # directly, so move the live state aside, swap in the staging
-            # directory, and delete the backup last.
+            # Preferred path: rename-aside, swap, drop. This is the strongest
+            # atomicity guarantee available — at most one os.replace away from
+            # either the old or new state at all times.
+            #
+            # On Docker bind mounts the rename of the directory itself fails
+            # with EBUSY (mount root) or EXDEV (cross-device on overlayfs);
+            # in those cases fall back to drain-and-replace, which is still
+            # per-file atomic but not directory-atomic. A crash mid-drain
+            # would leave a mixed state — acceptable because the caller
+            # explicitly opted into a bind-mount target.
             backup: Path | None = None
-            if directory.exists():
-                backup = parent / f".{directory.name}.old.{os.getpid()}"
-                if backup.exists():
+            try:
+                if directory.exists():
+                    backup = parent / f".{directory.name}.old.{os.getpid()}"
+                    if backup.exists():
+                        shutil.rmtree(backup, ignore_errors=True)
+                    os.replace(directory, backup)
+                os.replace(staging, directory)
+                staging = directory
+                if backup is not None:
                     shutil.rmtree(backup, ignore_errors=True)
-                os.replace(directory, backup)
-            os.replace(staging, directory)
-            staging = directory
-            if backup is not None:
-                shutil.rmtree(backup, ignore_errors=True)
+            except OSError as exc:
+                if exc.errno not in (errno.EBUSY, errno.EXDEV, errno.EACCES):
+                    raise
+                # Fallback: drain the live directory in place and copy
+                # staged contents in. Per-file copy (not rename) is required
+                # because the sibling staging dir lives on a different "device"
+                # from a bind-mount target according to overlayfs semantics.
+                directory.mkdir(parents=True, exist_ok=True)
+                for existing in list(directory.iterdir()):
+                    if existing.is_dir():
+                        shutil.rmtree(existing, ignore_errors=True)
+                    else:
+                        existing.unlink(missing_ok=True)
+                for src in list(staging.iterdir()):
+                    dst = directory / src.name
+                    if src.is_dir():
+                        shutil.copytree(src, dst)
+                    else:
+                        shutil.copy2(src, dst)
+                shutil.rmtree(staging, ignore_errors=True)
+                staging = directory
         except BaseException:
             if staging.exists() and staging != directory:
                 shutil.rmtree(staging, ignore_errors=True)
