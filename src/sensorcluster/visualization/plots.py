@@ -89,7 +89,7 @@ def save_cluster_umap(
             label=f"label CLASS_{int(c)}",
         )
 
-    ax.set_title("UMAP projection of PCA-reduced sensor space")
+    ax.set_title("UMAP projection of the feature space used by HDBSCAN")
     ax.set_xlabel("UMAP-1")
     ax.set_ylabel("UMAP-2")
     ax.legend(loc="best", fontsize=7, framealpha=0.85, ncols=2)
