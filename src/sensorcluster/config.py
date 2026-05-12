@@ -41,15 +41,32 @@ class PreprocessConfig(StrictBaseModel):
 
 
 class PCAConfig(StrictBaseModel):
+    # If n_components is set (>=1), it wins; otherwise variance_target picks
+    # the smallest k whose cumulative explained variance reaches the target.
+    # Only consulted when features.mode == "pca".
     variance_target: float = 0.95
+    n_components: int | None = 5
+
+
+class FeaturesConfig(StrictBaseModel):
+    """Feature-extraction mode selector.
+
+    Notebook 04's multi-view experiment found that per-row statistical
+    aggregates (mean / std / min / max / range / skewness / kurtosis /
+    quantiles / median) cluster much better than per-sensor PCA on this
+    dataset — 10-seed CV ARI ~0.40 vs ~0.085. Default is now ``aggregates``.
+    Switch to ``pca`` to fall back to the legacy projection.
+    """
+
+    mode: str = "aggregates"  # "aggregates" | "pca"
 
 
 class HDBSCANConfig(StrictBaseModel):
     # Defaults track configs/base.yaml so constructing Settings() without a
     # YAML file produces the same operating point reviewers see when they
     # run `sensorcluster train --config configs/base.yaml`.
-    min_cluster_size: int = 8
-    min_samples: int = 3
+    min_cluster_size: int = 10
+    min_samples: int = 5
     metric: str = "euclidean"
     cluster_selection_method: str = "eom"
     prediction_data: bool = True
@@ -99,6 +116,7 @@ class Settings(BaseSettings):
     model_version: str = "0.1.0"
     data: DataConfig = Field(default_factory=DataConfig)
     preprocess: PreprocessConfig = Field(default_factory=PreprocessConfig)
+    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     pca: PCAConfig = Field(default_factory=PCAConfig)
     hdbscan: HDBSCANConfig = Field(default_factory=HDBSCANConfig)
     novelty: NoveltyConfig = Field(default_factory=NoveltyConfig)

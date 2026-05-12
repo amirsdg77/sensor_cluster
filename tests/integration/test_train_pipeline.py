@@ -15,6 +15,12 @@ from sensorcluster.pipeline.train import train
 def test_train_on_synthetic_data_produces_artifacts_and_high_ari(
     synthetic_csv: Path, tmp_artifacts: Path
 ) -> None:
+    # The synthetic fixture is sklearn-style Gaussian blobs — exactly the
+    # scenario PCA + density clustering was designed for. The project's
+    # production default is "aggregates" (which targets heterogeneous-row
+    # tabular data), but blob data has no per-row distributional signature
+    # to exploit, so we pin this test to "pca" to validate the algorithm's
+    # behaviour on its intended cluster shape.
     cfg = Settings(
         artifacts_dir=tmp_artifacts,
         data={
@@ -22,6 +28,7 @@ def test_train_on_synthetic_data_produces_artifacts_and_high_ari(
             "sensor_min": -1.0,
             "sensor_max": 1.0,
         },
+        features={"mode": "pca"},
         hdbscan={"min_cluster_size": 10, "min_samples": 3},
         evaluation={"cv_folds": 3, "bootstrap_n_runs": 5, "bootstrap_sample_frac": 0.8},
         mlflow={"enabled": False},
@@ -49,9 +56,12 @@ def test_train_on_synthetic_data_produces_artifacts_and_high_ari(
 
 @pytest.mark.integration()
 def test_train_then_load_pipeline_round_trip(synthetic_csv: Path, tmp_artifacts: Path) -> None:
+    # Round-trip test should explicitly cover both feature modes; use PCA
+    # here so the load path exercises the legacy PCAReducer artifact format.
     cfg = Settings(
         artifacts_dir=tmp_artifacts,
         data={"path": synthetic_csv, "sensor_min": -1.0, "sensor_max": 1.0},
+        features={"mode": "pca"},
         hdbscan={"min_cluster_size": 10, "min_samples": 3},
         evaluation={"cv_folds": 3, "bootstrap_n_runs": 3, "bootstrap_sample_frac": 0.8},
         mlflow={"enabled": False},
