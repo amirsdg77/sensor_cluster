@@ -17,14 +17,18 @@ data:
 preprocess:
   imputer_strategy: median   # median > mean for sensor data with sporadic spikes
 
+features:
+  # Notebook 04 multi-view experiment found that per-row statistical
+  # aggregates (mean, std, min, max, range, skewness, kurtosis, quantiles,
+  # median) produce ~5x better multi-seed CV ARI than the legacy PCA
+  # projection on this dataset (~0.40 vs ~0.085). Set mode: "pca" to fall
+  # back to the legacy behaviour and respect the `pca:` block below.
+  mode: aggregates
+
 pca:
-  # n_components wins over variance_target when both are set.
-  # Notebook 04 multi-seed sweep showed n_components=5 + HDBSCAN(mcs=10, ms=5)
-  # produces the best CV ARI on this dataset (+0.085 averaged across 10 seeds
-  # vs +0.052 for the original variance_target=0.95 default — a 64% lift).
-  # PCA dim and HDBSCAN params must be tuned together; lower-dim space is
-  # denser, so HDBSCAN needs a tighter min_samples threshold to compensate.
-  # Set n_components: null to fall back to the variance_target heuristic.
+  # Consulted only when features.mode == "pca". n_components wins over
+  # variance_target when both are set; set n_components: null to fall back
+  # to the variance_target heuristic.
   n_components: 5
   variance_target: 0.95
 

@@ -110,6 +110,138 @@ class PCAReducer:
         return obj
 
 
+class AggregatesReducer:
+    """Per-row statistical-aggregates feature transformer.
+
+    Computes a fixed set of summary statistics across the input columns for
+    each row — mean, std, min, max, range, skewness, kurtosis, q25, q75,
+    median by default. This collapses an n-sensor row into a small set of
+    per-row distributional features.
+
+    Why this exists: notebook 04's multi-view experiment showed that on the
+    bundled near-uniform sensor data, HDBSCAN clusters per-row aggregates
+    much better than per-sensor PCA — multi-seed CV ARI ~0.40 vs ~0.09 for
+    PCA-5. The mechanism: PCA finds linear combinations of *sensor columns*;
+    aggregates compute per-row *moments* (e.g. ``max - min`` is non-linear).
+    Failure modes on this dataset are distinguishable by the row's overall
+    distribution character, not by individual sensor values, which PCA
+    cannot capture.
+
+    Public surface matches :class:`PCAReducer`: ``fit / transform /
+    fit_transform / save / load / n_components_``, so callers (train.py,
+    pipeline_model.py) treat the two interchangeably.
+    """
+
+    # Names match the ``feature_names_`` order; keep in sync with _compute().
+    FEATURE_NAMES: tuple[str, ...] = (
+        "mean",
+        "std",
+        "min",
+        "max",
+        "range",
+        "skewness",
+        "kurtosis",
+        "q25",
+        "q75",
+        "median",
+    )
+
+    def __init__(self, random_state: int = 42) -> None:
+        # random_state is not used internally — aggregates are deterministic —
+        # but we keep the parameter so the public API mirrors PCAReducer.
+        self.random_state = random_state
+        self._n_input_features: int | None = None
+
+    def fit(self, X: np.ndarray) -> AggregatesReducer:
+        """No-op fit: we record the input dimensionality for sanity checks
+        but the transform itself has no fitted state."""
+        self._n_input_features = int(X.shape[1])
+        return self
+
+    @staticmethod
+    def _compute(X: np.ndarray) -> np.ndarray:
+        """Compute the row-level aggregates without using any sklearn fit
+        state. Pure function of the input row."""
+        # Lazy import — scipy is already a transitive dep but keep the import
+        # local so the import order is clear from this method alone.
+        from scipy import stats as sp_stats
+
+        return np.column_stack(
+            [
+                X.mean(axis=1),
+                X.std(axis=1),
+                X.min(axis=1),
+                X.max(axis=1),
+                X.max(axis=1) - X.min(axis=1),
+                sp_stats.skew(X, axis=1),
+                sp_stats.kurtosis(X, axis=1),
+                np.quantile(X, 0.25, axis=1),
+                np.quantile(X, 0.75, axis=1),
+                np.median(X, axis=1),
+            ]
+        ).astype(np.float64)
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        if self._n_input_features is None:
+            raise RuntimeError("AggregatesReducer.fit must be called before transform")
+        if X.shape[1] != self._n_input_features:
+            raise ValueError(f"Expected {self._n_input_features} input features, got {X.shape[1]}")
+        return self._compute(np.asarray(X, dtype=np.float64))
+
+    def fit_transform(self, X: np.ndarray) -> np.ndarray:
+        return self.fit(X).transform(X)
+
+    @property
+    def n_components_(self) -> int:
+        return len(self.FEATURE_NAMES)
+
+    @property
+    def explained_variance_ratio_(self) -> np.ndarray:
+        """For interface parity with PCAReducer. Aggregates don't decompose
+        variance, so we return an empty array — callers that branch on the
+        feature mode know not to interpret this number."""
+        return np.array([], dtype=np.float64)
+
+    def save(self, path: Path | str) -> None:
+        if self._n_input_features is None:
+            raise RuntimeError("Cannot save unfitted AggregatesReducer")
+        payload: dict[str, Any] = {
+            "kind": "aggregates",
+            "n_input_features": self._n_input_features,
+            "random_state": self.random_state,
+            "feature_names": list(self.FEATURE_NAMES),
+        }
+        joblib.dump(payload, Path(path), compress=3)
+
+    @classmethod
+    def load(cls, path: Path | str) -> AggregatesReducer:
+        payload: dict[str, Any] = joblib.load(Path(path))
+        obj = cls(random_state=payload["random_state"])
+        obj._n_input_features = int(payload["n_input_features"])
+        return obj
+
+
+def load_reducer(path: Path | str):
+    """Polymorphic loader — detects whether ``path`` holds a PCA or an
+    aggregates artifact and returns the right object. This keeps
+    :class:`SensorClusterPipeline.load` agnostic about the feature mode."""
+    payload: dict[str, Any] = joblib.load(Path(path))
+    if payload.get("kind") == "aggregates":
+        obj = AggregatesReducer(random_state=payload["random_state"])
+        obj._n_input_features = int(payload["n_input_features"])
+        return obj
+    # Default: legacy PCA payload. Reconstruct via PCAReducer.load to keep
+    # the round-trip path identical to before this refactor.
+    obj_pca = PCAReducer(
+        variance_target=payload.get("variance_target"),
+        n_components=payload.get("n_components"),
+        random_state=payload["random_state"],
+    )
+    obj_pca._pca = payload["pca"]
+    obj_pca._n_components_ = payload["n_components_"]
+    return obj_pca
+
+
 class UMAPVisualizer:
     """2-D UMAP for plots only.
 

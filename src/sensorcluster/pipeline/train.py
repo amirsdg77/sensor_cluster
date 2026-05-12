@@ -31,7 +31,7 @@ from sensorcluster.evaluation.metrics import (
     compute_internal_metrics,
 )
 from sensorcluster.evaluation.report import generate_report
-from sensorcluster.features.dimreduce import PCAReducer
+from sensorcluster.features.dimreduce import AggregatesReducer, PCAReducer
 from sensorcluster.features.preprocess import Preprocessor
 from sensorcluster.logging_setup import configure as configure_logging
 from sensorcluster.logging_setup import get_logger
@@ -46,6 +46,27 @@ log = get_logger(__name__)
 PredictLabelIdFn = Callable[[pd.DataFrame], np.ndarray]
 PipelineFactoryFn = Callable[[pd.DataFrame, pd.Series], PredictLabelIdFn]
 StabilityFitFn = Callable[[np.ndarray], np.ndarray]
+
+
+def _build_reducer(cfg: Settings):
+    """Return a fresh feature-extractor according to ``cfg.features.mode``.
+
+    Supported modes:
+      - ``"aggregates"`` (default): per-row mean/std/min/max/range/skewness/
+        kurtosis/quantiles/median. Best CV ARI on the bundled dataset.
+      - ``"pca"``: legacy PCA via :class:`PCAReducer` honouring
+        ``cfg.pca.n_components`` / ``cfg.pca.variance_target``.
+    """
+    mode = cfg.features.mode.lower()
+    if mode == "aggregates":
+        return AggregatesReducer(random_state=cfg.random_seed)
+    if mode == "pca":
+        return PCAReducer(
+            variance_target=cfg.pca.variance_target,
+            n_components=cfg.pca.n_components,
+            random_state=cfg.random_seed,
+        )
+    raise ValueError(f"Unknown features.mode {mode!r}; expected 'aggregates' or 'pca'.")
 
 
 @dataclass
@@ -137,11 +158,7 @@ def _factory_for_cv(cfg: Settings) -> PipelineFactoryFn:
     def factory(X_train: pd.DataFrame, y_train: pd.Series) -> PredictLabelIdFn:
         pre = Preprocessor(imputer_strategy=cfg.preprocess.imputer_strategy).fit(X_train)
         Xs = pre.transform(X_train)
-        pca = PCAReducer(
-            variance_target=cfg.pca.variance_target,
-            n_components=cfg.pca.n_components,
-            random_state=cfg.random_seed,
-        ).fit(Xs)
+        pca = _build_reducer(cfg).fit(Xs)
         Xp = pca.transform(Xs)
         model = HDBSCANModel(
             min_cluster_size=cfg.hdbscan.min_cluster_size,
@@ -226,17 +243,12 @@ def train(cfg: Settings) -> TrainResult:
     pre = Preprocessor(imputer_strategy=cfg.preprocess.imputer_strategy).fit(X)
     X_scaled = pre.transform(X)
 
-    pca = PCAReducer(
-        variance_target=cfg.pca.variance_target,
-        n_components=cfg.pca.n_components,
-        random_state=cfg.random_seed,
-    ).fit(X_scaled)
+    pca = _build_reducer(cfg).fit(X_scaled)
     X_proj = pca.transform(X_scaled)
     log.info(
-        "pca_fitted",
+        "reducer_fitted",
+        mode=cfg.features.mode,
         n_components=pca.n_components_,
-        variance_target=cfg.pca.variance_target,
-        n_components_config=cfg.pca.n_components,
     )
 
     model = HDBSCANModel(

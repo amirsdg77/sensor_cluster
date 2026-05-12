@@ -43,11 +43,22 @@ class PreprocessConfig(StrictBaseModel):
 class PCAConfig(StrictBaseModel):
     # If n_components is set (>=1), it wins; otherwise variance_target picks
     # the smallest k whose cumulative explained variance reaches the target.
-    # Notebook 04 (feature engineering sweep) showed n_components=5 produces
-    # better HDBSCAN ARI on the bundled near-uniform data than the original
-    # variance_target=0.95 default, due to the curse of dimensionality.
+    # Only consulted when features.mode == "pca".
     variance_target: float = 0.95
     n_components: int | None = 5
+
+
+class FeaturesConfig(StrictBaseModel):
+    """Feature-extraction mode selector.
+
+    Notebook 04's multi-view experiment found that per-row statistical
+    aggregates (mean / std / min / max / range / skewness / kurtosis /
+    quantiles / median) cluster much better than per-sensor PCA on this
+    dataset — 10-seed CV ARI ~0.40 vs ~0.085. Default is now ``aggregates``.
+    Switch to ``pca`` to fall back to the legacy projection.
+    """
+
+    mode: str = "aggregates"  # "aggregates" | "pca"
 
 
 class HDBSCANConfig(StrictBaseModel):
@@ -105,6 +116,7 @@ class Settings(BaseSettings):
     model_version: str = "0.1.0"
     data: DataConfig = Field(default_factory=DataConfig)
     preprocess: PreprocessConfig = Field(default_factory=PreprocessConfig)
+    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     pca: PCAConfig = Field(default_factory=PCAConfig)
     hdbscan: HDBSCANConfig = Field(default_factory=HDBSCANConfig)
     novelty: NoveltyConfig = Field(default_factory=NoveltyConfig)

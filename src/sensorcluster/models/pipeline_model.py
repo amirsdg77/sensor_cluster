@@ -22,7 +22,11 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
-from sensorcluster.features.dimreduce import PCAReducer
+from sensorcluster.features.dimreduce import (
+    AggregatesReducer,
+    PCAReducer,
+    load_reducer,
+)
 from sensorcluster.features.preprocess import Preprocessor
 from sensorcluster.models.hdbscan_model import HDBSCANModel
 from sensorcluster.models.label_map import ClusterLabelMap
@@ -57,7 +61,7 @@ class SensorClusterPipeline:
     def __init__(
         self,
         preprocessor: Preprocessor,
-        pca: PCAReducer,
+        pca: PCAReducer | AggregatesReducer,
         hdbscan_model: HDBSCANModel,
         label_map: ClusterLabelMap,
         *,
@@ -254,7 +258,9 @@ class SensorClusterPipeline:
             raise FileNotFoundError(f"Pipeline directory not found: {directory}")
 
         preprocessor = Preprocessor.load(directory / cls.SCALER_FILE)
-        pca = PCAReducer.load(directory / cls.PCA_FILE)
+        # Polymorphic loader: returns PCAReducer or AggregatesReducer depending
+        # on which kind the artifact was saved with.
+        pca = load_reducer(directory / cls.PCA_FILE)
         hdb = HDBSCANModel.load(directory / cls.HDBSCAN_FILE)
         label_map = ClusterLabelMap.load(directory / cls.LABELMAP_FILE)
 
